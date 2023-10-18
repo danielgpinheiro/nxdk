@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: CC0-1.0
 
-// SPDX-FileCopyrightText: 2017-2022 Stefan Schmidt
+// SPDX-FileCopyrightText: 2017-2023 Stefan Schmidt
 // SPDX-FileCopyrightText: 2018-2021 Jannik Vogel
 // SPDX-FileCopyrightText: 2018 Sean Koppenhafer
 // SPDX-FileCopyrightText: 2022 Erik Abair
@@ -113,7 +113,7 @@ typedef CONST UNICODE_STRING *PCUNICODE_STRING;
 
 #define IsListEmpty(ListHead) ((ListHead)->Flink == (ListHead))
 
-#define RemoveHeadList(Listhead) (ListHead)->Flink;{RemoveEntryList((ListHead)->Flink)}
+#define RemoveHeadList(ListHead) (ListHead)->Flink;{RemoveEntryList((ListHead)->Flink)}
 
 #define RemoveTailList(ListHead) (ListHead)->Blink;{RemoveEntryList((ListHead)->Blink)}
 
@@ -890,6 +890,16 @@ typedef struct _OBJECT_TYPE
     PVOID DefaultObject;
     ULONG PoolTag;
 } OBJECT_TYPE, *POBJECT_TYPE;
+
+typedef struct _OBJECT_HEADER {
+	LONG PointerCount;
+	LONG HandleCount;
+	POBJECT_TYPE Type;
+	ULONG Flags;
+	QUAD Body;
+} OBJECT_HEADER, *POBJECT_HEADER;
+
+#define OBJECT_TO_OBJECT_HEADER(Object) CONTAINING_RECORD(Object, OBJECT_HEADER, Body)
 
 typedef VOID (NTAPI *PKDEFERRED_ROUTINE) (
     IN PKDPC Dpc,
@@ -1844,6 +1854,14 @@ XBAPI WCHAR NTAPI RtlUpcaseUnicodeChar
     WCHAR SourceCharacter
 );
 
+/**
+ * Initiates an unwind of procedure call frames
+ * THIS FUNCTION IS NOT SAFE TO CALL FROM C CODE! It does not follow the stdcall convention and trashes registers that are supposed to be callee-saved.
+ * @param TargetFrame A pointer to the call frame that is the target of the unwind. If this parameter is NULL, the function performs an exit unwind.
+ * @param TargetIp The continuation address of the unwind. If NULL, the function will return normally. This parameter is ignored if TargetFrame is NULL.
+ * @param ExceptionRecord A pointer to an EXCEPTION_RECORD structure.
+ * @param ReturnValue A value to be placed in the integer function return register before continuing execution.
+ */
 XBAPI VOID NTAPI RtlUnwind
 (
     IN PVOID TargetFrame OPTIONAL,
@@ -2418,10 +2436,16 @@ XBAPI NTSTATUS NTAPI PhyInitialize
     PVOID param OPTIONAL
 );
 
+#define XNET_ETHERNET_LINK_ACTIVE 0x01
+#define XNET_ETHERNET_LINK_100MBPS 0x02
+#define XNET_ETHERNET_LINK_10MBPS 0x04
+#define XNET_ETHERNET_LINK_FULL_DUPLEX 0x08
+#define XNET_ETHERNET_LINK_HALF_DUPLEX 0x10
+
 /**
  * Returns link status information either from NIC registers or from the last value cached by the kernel
  * @param update If FALSE, the kernel returns the cached value, otherwise the hardware is polled and the cached value updated
- * @return Flags describing the status of the NIC
+ * @return Flags describing the status of the NIC. See XNET_ETHERNET_LINK bit masks.
  */
 XBAPI DWORD NTAPI PhyGetLinkState
 (
@@ -2446,7 +2470,7 @@ XBAPI NTSTATUS NTAPI ObReferenceObjectByName
     OUT PVOID *Object
 );
 
-XBAPI BOOLEAN NTAPI ObReferenceObjectByHandle
+XBAPI NTSTATUS NTAPI ObReferenceObjectByHandle
 (
     IN HANDLE Handle,
     IN POBJECT_TYPE ObjectType OPTIONAL,
@@ -4191,6 +4215,9 @@ XBAPI OBJECT_TYPE ExSemaphoreObjectType;
 #define XC_MAX_FACTORY                    0x01FF
 #define XC_ENCRYPTED_SECTION              0xFFFE
 #define XC_MAX_ALL                        0xFFFF
+
+// This bit is set in XC_MISC when automatic daylight savings time (DST) adjustment is disabled
+#define XC_MISC_FLAG_DISABLE_DST 0x02
 
 XBAPI NTSTATUS NTAPI ExSaveNonVolatileSetting
 (
