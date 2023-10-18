@@ -86,6 +86,10 @@ include $(NXDK_DIR)/lib/sdl/SDL2_mixer/Makefile
 endif
 endif
 
+ifneq ($(NXDK_PBGL),)
+include $(NXDK_DIR)/lib/pbgl/Makefile
+endif
+
 V = 0
 VE_0 := @
 VE_1 :=
