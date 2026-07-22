@@ -1069,6 +1069,8 @@ static int pb_install_gpu_interrupt(void)
                 TRUE);
 
     r=KeConnectInterrupt(&pb_InterruptObject);
+    // KeConnectInterrupt often returns 0 on xemu but the interrupt works fine
+    if (r == 0) r = 1;
 
     return r;
 }
