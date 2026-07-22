@@ -90,3 +90,26 @@ void GetLocalTime (LPSYSTEMTIME lpSystemTime)
     lpSystemTime->wMilliseconds = timeFields.Millisecond;
     lpSystemTime->wDayOfWeek = timeFields.Weekday;
 }
+
+BOOL FileTimeToSystemTime(const FILETIME *lpFileTime, LPSYSTEMTIME lpSystemTime)
+{
+    if (!lpFileTime || !lpSystemTime)
+        return 0;
+
+    LARGE_INTEGER kTime;
+    TIME_FIELDS timeFields;
+
+    kTime.LowPart = lpFileTime->dwLowDateTime;
+    kTime.HighPart = lpFileTime->dwHighDateTime;
+    RtlTimeToTimeFields(&kTime, &timeFields);
+
+    lpSystemTime->wYear = timeFields.Year;
+    lpSystemTime->wMonth = timeFields.Month;
+    lpSystemTime->wDay = timeFields.Day;
+    lpSystemTime->wHour = timeFields.Hour;
+    lpSystemTime->wMinute = timeFields.Minute;
+    lpSystemTime->wSecond = timeFields.Second;
+    lpSystemTime->wMilliseconds = timeFields.Millisecond;
+    lpSystemTime->wDayOfWeek = timeFields.Weekday;
+    return 1;
+}

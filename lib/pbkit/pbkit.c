@@ -69,6 +69,7 @@
 #define PB_SETNOISE                 0xBAA
 #define PB_FINISHED                 0xFAB
 
+#if 0
 struct s_CtxDma
 {
     DWORD               ChannelID;
@@ -76,8 +77,9 @@ struct s_CtxDma
     DWORD               Class;
     DWORD               isGr;
 };
+#endif
 
-static unsigned int pb_ColorFmt = NV097_SET_SURFACE_FORMAT_COLOR_LE_A8R8G8B8;
+unsigned int pb_ColorFmt = NV097_SET_SURFACE_FORMAT_COLOR_LE_A8R8G8B8;
 static unsigned int pb_DepthFmt = NV097_SET_SURFACE_FORMAT_ZETA_Z24S8;
 
 static  int         pb_running=0;
@@ -1344,7 +1346,7 @@ static void pb_prepare_tiles(void)
 
 
 
-static void pb_create_dma_ctx(  DWORD ChannelID,
+void pb_create_dma_ctx(  DWORD ChannelID,
                 DWORD Class,
                 DWORD Base,
                 DWORD Limit,
@@ -1393,7 +1395,7 @@ static void pb_create_dma_ctx(  DWORD ChannelID,
 
 
 
-static void pb_bind_channel(struct s_CtxDma *pCtxDmaObject)
+void pb_bind_channel(struct s_CtxDma *pCtxDmaObject)
 {
     DWORD       entry;
     DWORD       *p;
@@ -1413,6 +1415,26 @@ static void pb_bind_channel(struct s_CtxDma *pCtxDmaObject)
         (pCtxDmaObject->Inst&0xFFFF);
 }
 
+void pb_set_dma_address(struct s_CtxDma *pCtxDmaObject, void *addr, DWORD limit)
+{
+    DWORD dma_addr;
+    DWORD dma_flags;
+    uint32_t *p;
+
+    dma_addr = (DWORD)addr;
+    dma_flags = pCtxDmaObject->Class;
+    dma_flags |= 0x00003000;
+    dma_flags |= 0x00020000;
+    dma_flags |= 0x00008000;
+
+    p = pb_begin();
+    p = pb_push2(p, NV20_TCL_PRIMITIVE_3D_WAIT_MAKESPACE, 0, 0);
+    p = pb_push2(p, NV20_TCL_PRIMITIVE_3D_PARAMETER_A, NV_PRAMIN + (pCtxDmaObject->Inst << 4) + 0x08, dma_addr | 3);
+    p = pb_push2(p, NV20_TCL_PRIMITIVE_3D_PARAMETER_A, NV_PRAMIN + (pCtxDmaObject->Inst << 4) + 0x0C, dma_addr | 3);
+    p = pb_push2(p, NV20_TCL_PRIMITIVE_3D_PARAMETER_A, NV_PRAMIN + (pCtxDmaObject->Inst << 4) + 0x00, dma_flags);
+    p = pb_push2(p, NV20_TCL_PRIMITIVE_3D_PARAMETER_A, NV_PRAMIN + (pCtxDmaObject->Inst << 4) + 0x04, limit);
+    pb_end(p);
+}
 
 
 static void pb_3D_init(void)

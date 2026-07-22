@@ -115,6 +115,28 @@ void    pb_set_viewport(int dwx,int dwy,int width,int height,float zmin,float zm
 
 int pb_busy(void);
 
+// DMA channel for GPU pixel rendering
+#ifndef DMA_CHANNEL_PIXEL_RENDERER
+#define DMA_CHANNEL_PIXEL_RENDERER  9
+#endif
+#define DMA_CLASS_3D                0x3D
+#define MAXRAM                      0x03FFAFFF
+
+#ifndef _PBKIT_CTXDMA_DEFINED
+#define _PBKIT_CTXDMA_DEFINED
+struct s_CtxDma
+{
+    DWORD               ChannelID;
+    DWORD               Inst;
+    DWORD               Class;
+    DWORD               isGr;
+};
+#endif
+
+void pb_create_dma_ctx(DWORD ChannelID, DWORD Class, DWORD Base, DWORD Limit, struct s_CtxDma *pDmaObject);
+void pb_bind_channel(struct s_CtxDma *pCtxDmaObject);
+void pb_set_dma_address(struct s_CtxDma *pCtxDmaObject, void *addr, DWORD limit);
+
 
 #ifdef __cplusplus
 }

@@ -16,6 +16,7 @@ void GetSystemTime (LPSYSTEMTIME lpSystemTime);
 void GetSystemTimePreciseAsFileTime (LPFILETIME lpSystemTimeAsFileTime);
 DWORD GetTickCount (void);
 void GetLocalTime (LPSYSTEMTIME lpSystemTime);
+BOOL FileTimeToSystemTime(const FILETIME *lpFileTime, LPSYSTEMTIME lpSystemTime);
 
 // Unprovided fields are intentionally disabled to catch code trying to access them
 typedef struct _SYSTEM_INFO
