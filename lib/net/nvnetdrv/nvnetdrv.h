@@ -8,27 +8,21 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <xboxkrnl/xboxkrnl.h>
 
-#ifndef RX_RING_SIZE
-#define RX_RING_SIZE 64
-#endif
-#ifndef TX_RING_SIZE
-#define TX_RING_SIZE 64
-#endif
-
-// Must be greated than max thernet frame size. A multiple of page size prevents page boundary crossing
+// Must be greater than max ethernet frame size. A multiple of page size prevents page boundary crossing
 #define NVNET_RX_BUFF_LEN (PAGE_SIZE / 2)
 
 // NVNET error codes
-#define NVNET_OK 0
-#define NVNET_NO_MEM -1
-#define NVNET_NO_MAC -2
+#define NVNET_OK      0
+#define NVNET_NO_MEM  -1
+#define NVNET_NO_MAC  -2
 #define NVNET_PHY_ERR -3
 #define NVNET_SYS_ERR -4
 
-typedef void (*nvnetdrv_rx_callback_t) (void *buffer, uint16_t length);
-typedef void (*nvnetdrv_tx_callback_t) (void *userdata);
+typedef void (*nvnetdrv_rx_callback_t)(void *buffer, uint16_t length);
+typedef void (*nvnetdrv_tx_callback_t)(void *userdata);
 
 typedef struct _nvnetdrv_descriptor_t
 {
@@ -50,12 +44,12 @@ void nvnetdrv_start_txrx (void);
 
 /**
  * Initialised the low level NIC hardware.
- * @param rx_buffer_count The number of receive buffers to reserve. This should be atleast two.
- * Recommend this this equal to or greater than RX_RING_SIZE.
+ * @param rx_buffer_count The number of receive buffers to reserve for network packets
  * @param rx_callback. Pointer to a callback function that is called when a new packet is received by the NIC.
+ * @param tx_queue_size. How many packets can be queued for transfer simultaneously.
  * @return NVNET_OK or the error.
  */
-int nvnetdrv_init (size_t rx_buffer_count, nvnetdrv_rx_callback_t rx_callback);
+int nvnetdrv_init (size_t rx_buffer_count, nvnetdrv_rx_callback_t rx_callback, size_t tx_queue_size);
 
 /**
  * Stop the low level NIC hardware. Should be called after nvnetdrv_init() to shutdown the NIC hardware.
@@ -66,7 +60,7 @@ void nvnetdrv_stop (void);
  * Returns the ethernet MAC Address.
  * @return A pointer to an array containing the 6 byte ethernet MAC address.
  */
-const uint8_t *nvnetdrv_get_ethernet_addr ();
+const uint8_t *nvnetdrv_get_ethernet_addr (void);
 
 /**
  * Reserves 1-4 descriptors. If the requested number is not immediately available,
@@ -92,6 +86,17 @@ void nvnetdrv_submit_tx_descriptors (nvnetdrv_descriptor_t *buffers, size_t coun
  * This function is thread-safe.
  * @param buffer_virt Pointer to the buffer given out by nvnetdrv.
  */
-void nvnetdrv_rx_release(void *buffer_virt);
+void nvnetdrv_rx_release (void *buffer_virt);
 
+/**
+ * @brief Check if the link is up.
+ * @return true if link connected, false if link is down.
+ */
+bool nvnetdrv_is_link_up (void);
+
+/**
+ * Called by the ISR when the link state changes.
+ * @param link_up True if the link is up, false if it is down.
+ */
+void nvnetdrv_link_state_change_callback (bool link_up);
 #endif

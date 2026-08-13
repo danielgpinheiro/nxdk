@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 
 // SPDX-FileCopyrightText: 2023 Ryan Wendland
+// SPDX-FileCopyrightText: 2025 Stefan Schmidt
 
-#include <timezoneapi.h>
-#include <winbase.h>
 #include <assert.h>
-#include <xboxkrnl/xboxkrnl.h>
 #include <string.h>
+#include <timezoneapi.h>
+#include <winerror.h>
+#include <winbase.h>
+#include <xboxkrnl/xboxkrnl.h>
 
 typedef struct
 {
@@ -18,10 +20,15 @@ typedef struct
 
 // Determine the day of the week given a year, month and day
 // https://en.wikipedia.org/wiki/Determination_of_the_day_of_the_week#Methods_in_computer_code
-static UCHAR GetDayOfWeek (SHORT year, UCHAR month, UCHAR day)
+static UCHAR GetDayOfWeek (INT year, INT month, INT day)
 {
-    return (day += month < 3 ? year-- : year - 2, 23 *
-            month / 9 + day + 4 + year / 4 - year / 100 + year / 400) % 7;
+    if (month < 3) {
+        day += year;
+        year--;
+    } else {
+        day += year - 2;
+    }
+    return (day + 23 * month / 9 + 4 + year / 4 - year / 100 + year / 400) % 7;
 }
 
 static UCHAR GetDaysInMonth (SHORT year, UCHAR month)
@@ -204,4 +211,88 @@ DWORD GetTimeZoneInformation (LPTIME_ZONE_INFORMATION lpTimeZoneInformation)
     } else {
         return TIME_ZONE_ID_STANDARD;
     }
+}
+
+BOOL FileTimeToSystemTime (const FILETIME *lpFileTime, LPSYSTEMTIME lpSystemTime)
+{
+    if (!lpFileTime || !lpSystemTime) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    LARGE_INTEGER filetime;
+    filetime.LowPart = lpFileTime->dwLowDateTime;
+    filetime.HighPart = lpFileTime->dwHighDateTime;
+    if (filetime.QuadPart < 0) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    TIME_FIELDS timefields;
+    RtlTimeToTimeFields(&filetime, &timefields);
+
+    lpSystemTime->wYear = timefields.Year;
+    lpSystemTime->wMonth = timefields.Month;
+    lpSystemTime->wDay = timefields.Day;
+    lpSystemTime->wDayOfWeek = timefields.Weekday;
+    lpSystemTime->wHour = timefields.Hour;
+    lpSystemTime->wMinute = timefields.Minute;
+    lpSystemTime->wSecond = timefields.Second;
+    lpSystemTime->wMilliseconds = timefields.Milliseconds;
+
+    return TRUE;
+}
+
+BOOL SystemTimeToFileTime (const SYSTEMTIME *lpSystemTime, LPFILETIME lpFileTime)
+{
+    if (!lpSystemTime || !lpFileTime) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    TIME_FIELDS timefields;
+    timefields.Year = lpSystemTime->wYear;
+    timefields.Month = lpSystemTime->wMonth;
+    timefields.Day = lpSystemTime->wDay;
+    timefields.Hour = lpSystemTime->wHour;
+    timefields.Minute = lpSystemTime->wMinute;
+    timefields.Second = lpSystemTime->wSecond;
+    timefields.Milliseconds = lpSystemTime->wMilliseconds;
+
+    LARGE_INTEGER filetime;
+    if (!RtlTimeFieldsToTime(&timefields, &filetime)) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    lpFileTime->dwLowDateTime = filetime.LowPart;
+    lpFileTime->dwHighDateTime = filetime.HighPart;
+    return TRUE;
+}
+
+BOOL FileTimeToLocalFileTime (const FILETIME *lpFileTime, LPFILETIME lpLocalFileTime)
+{
+    if (!lpFileTime || !lpLocalFileTime) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    TIME_ZONE_INFORMATION timeZoneInformation;
+    GetTimeZoneInformation(&timeZoneInformation);
+
+    // Get the timezone offset bias in 100-nanosecond intervals
+    LARGE_INTEGER offset;
+    offset.QuadPart = timeZoneInformation.Bias;
+    offset.QuadPart *= 60LL * 10000000LL;
+
+    LARGE_INTEGER fileTime;
+    fileTime.LowPart = lpFileTime->dwLowDateTime;
+    fileTime.HighPart = lpFileTime->dwHighDateTime;
+
+    // Adjust the file time by the timezone offset. This function does not account for DST.
+    fileTime.QuadPart -= offset.QuadPart;
+
+    lpLocalFileTime->dwLowDateTime = fileTime.LowPart;
+    lpLocalFileTime->dwHighDateTime = fileTime.HighPart;
+    return TRUE;
 }

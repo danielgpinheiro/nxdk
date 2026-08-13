@@ -13,6 +13,7 @@ extern "C" {
 #endif
 
 void GetSystemTime (LPSYSTEMTIME lpSystemTime);
+void GetSystemTimeAsFileTime (LPFILETIME lpSystemTimeAsFileTime);
 void GetSystemTimePreciseAsFileTime (LPFILETIME lpSystemTimeAsFileTime);
 DWORD GetTickCount (void);
 void GetLocalTime (LPSYSTEMTIME lpSystemTime);
@@ -23,7 +24,7 @@ typedef struct _SYSTEM_INFO
 {
     union
     {
-        //DWORD dwOemId;
+        // DWORD dwOemId;
         struct
         {
             WORD wProcessorArchitecture;
@@ -31,21 +32,21 @@ typedef struct _SYSTEM_INFO
         } DUMMYSTRUCTNAME;
     } DUMMYUNIONNAME;
     DWORD dwPageSize;
-    //LPVOID lpMinimumApplicationAddress;
-    //LPVOID lpMaximumApplicationAddress;
+    // LPVOID lpMinimumApplicationAddress;
+    // LPVOID lpMaximumApplicationAddress;
     DWORD_PTR dwActiveProcessorMask;
     DWORD dwNumberOfProcessors;
-    //DWORD dwProcessorType;
+    // DWORD dwProcessorType;
     DWORD dwAllocationGranularity;
-    //WORD wProcessorLevel;
-    //WORD wProcessorRevision;
+    // WORD wProcessorLevel;
+    // WORD wProcessorRevision;
 } SYSTEM_INFO, *LPSYSTEM_INFO;
 
-#define PROCESSOR_ARCHITECTURE_INTEL 0
-#define PROCESSOR_ARCHITECTURE_ARM 5
-#define PROCESSOR_ARCHITECTURE_IA64 6
-#define PROCESSOR_ARCHITECTURE_AMD64 9
-#define PROCESSOR_ARCHITECTURE_ARM64 12
+#define PROCESSOR_ARCHITECTURE_INTEL   0
+#define PROCESSOR_ARCHITECTURE_ARM     5
+#define PROCESSOR_ARCHITECTURE_IA64    6
+#define PROCESSOR_ARCHITECTURE_AMD64   9
+#define PROCESSOR_ARCHITECTURE_ARM64   12
 #define PROCESSOR_ARCHITECTURE_UNKNOWN 0xFFFF
 
 void GetSystemInfo (LPSYSTEM_INFO lpSystemInfo);

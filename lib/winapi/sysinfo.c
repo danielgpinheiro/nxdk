@@ -4,9 +4,9 @@
 // SPDX-FileCopyrightText: 2020 Samuel Cuella
 // SPDX-FileCopyrightText: 2023 Ryan Wendland
 
+#include <assert.h>
 #include <sysinfoapi.h>
 #include <timezoneapi.h>
-#include <assert.h>
 #include <xboxkrnl/xboxkrnl.h>
 
 void GetSystemTime (LPSYSTEMTIME lpSystemTime)
@@ -24,8 +24,13 @@ void GetSystemTime (LPSYSTEMTIME lpSystemTime)
     lpSystemTime->wHour = timeFields.Hour;
     lpSystemTime->wMinute = timeFields.Minute;
     lpSystemTime->wSecond = timeFields.Second;
-    lpSystemTime->wMilliseconds = timeFields.Millisecond;
+    lpSystemTime->wMilliseconds = timeFields.Milliseconds;
     lpSystemTime->wDayOfWeek = timeFields.Weekday;
+}
+
+void GetSystemTimeAsFileTime (LPFILETIME lpSystemTimeAsFileTime)
+{
+    GetSystemTimePreciseAsFileTime(lpSystemTimeAsFileTime);
 }
 
 void GetSystemTimePreciseAsFileTime (LPFILETIME lpSystemTimeAsFileTime)
@@ -87,7 +92,7 @@ void GetLocalTime (LPSYSTEMTIME lpSystemTime)
     lpSystemTime->wHour = timeFields.Hour;
     lpSystemTime->wMinute = timeFields.Minute;
     lpSystemTime->wSecond = timeFields.Second;
-    lpSystemTime->wMilliseconds = timeFields.Millisecond;
+    lpSystemTime->wMilliseconds = timeFields.Milliseconds;
     lpSystemTime->wDayOfWeek = timeFields.Weekday;
 }
 

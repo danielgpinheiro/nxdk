@@ -3,14 +3,14 @@
 // SPDX-FileCopyrightText: 2019-2022 Stefan Schmidt
 // SPDX-FileCopyrightText: 2021 Erik Abair
 
-#include <fileapi.h>
-#include <handleapi.h>
-#include <winbase.h>
-#include <winerror.h>
 #include <assert.h>
 #include <ctype.h>
+#include <fileapi.h>
+#include <handleapi.h>
 #include <stdbool.h>
 #include <string.h>
+#include <winbase.h>
+#include <winerror.h>
 #include <xboxkrnl/xboxkrnl.h>
 
 DWORD GetFileAttributesA (LPCSTR lpFileName)
@@ -104,6 +104,28 @@ BOOL SetFileAttributesA (LPCSTR lpFileName, DWORD dwFileAttributes)
     }
 
     return TRUE;
+}
+
+LONG CompareFileTime (const FILETIME *lpFileTime1, const FILETIME *lpFileTime2)
+{
+    ULARGE_INTEGER filetime1;
+    ULARGE_INTEGER filetime2;
+
+    assert(lpFileTime1 != NULL);
+    assert(lpFileTime2 != NULL);
+
+    filetime1.LowPart = lpFileTime1->dwLowDateTime;
+    filetime1.HighPart = lpFileTime1->dwHighDateTime;
+    filetime2.LowPart = lpFileTime2->dwLowDateTime;
+    filetime2.HighPart = lpFileTime2->dwHighDateTime;
+
+    if (filetime1.QuadPart < filetime2.QuadPart) {
+        return -1;
+    }
+    if (filetime1.QuadPart > filetime2.QuadPart) {
+        return 1;
+    }
+    return 0;
 }
 
 BOOL GetFileTime (HANDLE hFile, LPFILETIME lpCreationTime, LPFILETIME lpLastAccessTime, LPFILETIME lpLastWriteTime)
@@ -356,15 +378,15 @@ BOOL CopyFileA (LPCSTR lpExistingFileName, LPCSTR lpNewFileName, BOOL bFailIfExi
     InitializeObjectAttributes(&objectAttributes, &targetPath, OBJ_CASE_INSENSITIVE, ObDosDevicesDirectory(), NULL);
 
     status = NtCreateFile(
-            &targetHandle,
-            FILE_GENERIC_WRITE,
-            &objectAttributes,
-            &ioStatusBlock,
-            &networkOpenInformation.AllocationSize,
-            networkOpenInformation.FileAttributes,
-            0,
-            bFailIfExists ? FILE_CREATE : FILE_SUPERSEDE,
-            FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE | FILE_SEQUENTIAL_ONLY);
+        &targetHandle,
+        FILE_GENERIC_WRITE,
+        &objectAttributes,
+        &ioStatusBlock,
+        &networkOpenInformation.AllocationSize,
+        networkOpenInformation.FileAttributes,
+        0,
+        bFailIfExists ? FILE_CREATE : FILE_SUPERSEDE,
+        FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE | FILE_SEQUENTIAL_ONLY);
     if (!NT_SUCCESS(status)) {
         NtClose(sourceHandle);
         SetLastError(RtlNtStatusToDosError(status));
@@ -372,10 +394,10 @@ BOOL CopyFileA (LPCSTR lpExistingFileName, LPCSTR lpNewFileName, BOOL bFailIfExi
     }
 
     status = NtAllocateVirtualMemory(&readBuffer,
-                                      0,
-                                      &readBufferRegionSize,
-                                      MEM_RESERVE | MEM_COMMIT,
-                                      PAGE_READWRITE);
+                                     0,
+                                     &readBufferRegionSize,
+                                     MEM_RESERVE | MEM_COMMIT,
+                                     PAGE_READWRITE);
     if (!NT_SUCCESS(status)) {
         NtClose(sourceHandle);
         NtClose(targetHandle);
@@ -418,11 +440,11 @@ BOOL CopyFileA (LPCSTR lpExistingFileName, LPCSTR lpNewFileName, BOOL bFailIfExi
     fileBasicInformation.LastWriteTime = networkOpenInformation.LastWriteTime;
     fileBasicInformation.FileAttributes = networkOpenInformation.FileAttributes;
     status = NtSetInformationFile(
-            targetHandle,
-            &ioStatusBlock,
-            &fileBasicInformation,
-            sizeof(fileBasicInformation),
-            FileBasicInformation);
+        targetHandle,
+        &ioStatusBlock,
+        &fileBasicInformation,
+        sizeof(fileBasicInformation),
+        FileBasicInformation);
     if (!NT_SUCCESS(status)) {
         SetLastError(RtlNtStatusToDosError(status));
         NtClose(sourceHandle);
@@ -439,8 +461,8 @@ BOOL CopyFileA (LPCSTR lpExistingFileName, LPCSTR lpNewFileName, BOOL bFailIfExi
 
     status = NtClose(targetHandle);
     if (!NT_SUCCESS(status)) {
-      SetLastError(RtlNtStatusToDosError(status));
-      return FALSE;
+        SetLastError(RtlNtStatusToDosError(status));
+        return FALSE;
     }
     return TRUE;
 }
@@ -555,7 +577,8 @@ DWORD GetLogicalDrives (VOID)
     ANSI_STRING path;
     HANDLE handle;
     OBJECT_ATTRIBUTES attributes;
-    struct {
+    struct
+    {
         OBJECT_DIRECTORY_INFORMATION objDirInfo;
         CHAR filenameBuf[2];
     } objDirInfoBuf;
@@ -614,7 +637,7 @@ DWORD GetLogicalDriveStringsA (DWORD nBufferLength, LPSTR lpBuffer)
     }
 
     if (nBufferLength == 0 || nBufferLength < requiredBufLength) {
-        return requiredBufLength+1;
+        return requiredBufLength + 1;
     }
 
     for (int bit = 0; bit < 26; bit++) {
@@ -627,4 +650,95 @@ DWORD GetLogicalDriveStringsA (DWORD nBufferLength, LPSTR lpBuffer)
     }
     *lpBuffer = '\0';
     return requiredBufLength;
+}
+
+BOOL SetFileInformationByHandle (HANDLE hFile, FILE_INFO_BY_HANDLE_CLASS FileInformationClass, LPVOID lpFileInformation, DWORD dwBufferSize)
+{
+    FILE_INFORMATION_CLASS infoClass;
+
+    // Convert Windows API file information class to the corresponding kernel file information class.
+    switch (FileInformationClass) {
+        case FileBasicInfo:
+            infoClass = FileBasicInformation;
+            break;
+        case FileDispositionInfo:
+            infoClass = FileDispositionInformation;
+            break;
+        case FileAllocationInfo:
+            infoClass = FileAllocationInformation;
+            break;
+        case FileEndOfFileInfo:
+            infoClass = FileEndOfFileInformation;
+            break;
+        case FileIoPriorityHintInfo:
+        case FileRenameInfo:
+            // These should be supported by SetFileInformationByHandle however they are not implemented here for the following reasons:
+            // FileIoPriorityHintInfo: No corresponding kernel file information class
+            // FileRenameInfo: FILE_RENAME_INFO expects WCHAR file names which we do not support
+            assert(0 && "Specified File Information Class not implemented");
+            // fall through
+        default:
+            infoClass = -1;
+    }
+
+    if (infoClass == -1) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    IO_STATUS_BLOCK ioStatusBlock;
+    NTSTATUS status = NtSetInformationFile(hFile, &ioStatusBlock, lpFileInformation, dwBufferSize, infoClass);
+    if (!NT_SUCCESS(status)) {
+        SetLastError(RtlNtStatusToDosError(status));
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+BOOL GetFileInformationByHandle (HANDLE hFile, LPBY_HANDLE_FILE_INFORMATION lpFileInformation)
+{
+    NTSTATUS status;
+    IO_STATUS_BLOCK ioStatusBlock;
+    FILE_NETWORK_OPEN_INFORMATION network;
+    FILE_FS_VOLUME_INFORMATION volume;
+    FILE_INTERNAL_INFORMATION internal;
+
+    assert(lpFileInformation != NULL);
+
+    status = NtQueryInformationFile(hFile, &ioStatusBlock, &network, sizeof(network), FileNetworkOpenInformation);
+    if (!NT_SUCCESS(status)) {
+        SetLastError(RtlNtStatusToDosError(status));
+        return FALSE;
+    }
+
+    status = NtQueryVolumeInformationFile(hFile, &ioStatusBlock, &volume, sizeof(volume), FileFsVolumeInformation);
+    if (!NT_SUCCESS(status)) {
+        SetLastError(RtlNtStatusToDosError(status));
+        return FALSE;
+    }
+
+    status = NtQueryInformationFile(hFile, &ioStatusBlock, &internal, sizeof(internal), FileInternalInformation);
+    if (!NT_SUCCESS(status)) {
+        SetLastError(RtlNtStatusToDosError(status));
+        return FALSE;
+    }
+
+    lpFileInformation->dwFileAttributes = network.FileAttributes;
+    lpFileInformation->ftCreationTime.dwHighDateTime = network.CreationTime.HighPart;
+    lpFileInformation->ftCreationTime.dwLowDateTime = network.CreationTime.LowPart;
+    lpFileInformation->ftLastAccessTime.dwHighDateTime = network.LastAccessTime.HighPart;
+    lpFileInformation->ftLastAccessTime.dwLowDateTime = network.LastAccessTime.LowPart;
+    lpFileInformation->ftLastWriteTime.dwHighDateTime = network.LastWriteTime.HighPart;
+    lpFileInformation->ftLastWriteTime.dwLowDateTime = network.LastWriteTime.LowPart;
+    lpFileInformation->dwVolumeSerialNumber = volume.VolumeSerialNumber;
+    lpFileInformation->nFileSizeHigh = network.EndOfFile.HighPart;
+    lpFileInformation->nFileSizeLow = network.EndOfFile.LowPart;
+    lpFileInformation->nFileIndexHigh = internal.IndexNumber.HighPart;
+    lpFileInformation->nFileIndexLow = internal.IndexNumber.LowPart;
+
+    // For the FAT file system this member is always 1
+    lpFileInformation->nNumberOfLinks = 1;
+
+    return TRUE;
 }

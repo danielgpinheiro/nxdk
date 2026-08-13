@@ -6,26 +6,26 @@
 #ifndef __FILEAPI_H__
 #define __FILEAPI_H__
 
-#include <windef.h>
 #include <winbase.h>
+#include <windef.h>
 #include <winnt.h>
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
 DWORD GetFileAttributesA (LPCSTR lpFileName);
 BOOL GetFileAttributesExA (LPCSTR lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, LPVOID lpFileInformation);
 BOOL SetFileAttributesA (LPCSTR lpFileName, DWORD dwFileAttributes);
 
+LONG CompareFileTime (const FILETIME *lpFileTime1, const FILETIME *lpFileTime2);
 BOOL GetFileTime (HANDLE hFile, LPFILETIME lpCreationTime, LPFILETIME lpLastAccessTime, LPFILETIME lpLastWriteTime);
 BOOL SetFileTime (HANDLE hFile, const FILETIME *lpCreationTime, const FILETIME *lpLastAccessTime, const FILETIME *lpLastWriteTime);
 
-#define CREATE_NEW 1
-#define CREATE_ALWAYS 2
-#define OPEN_EXISTING 3
-#define OPEN_ALWAYS 4
+#define CREATE_NEW        1
+#define CREATE_ALWAYS     2
+#define OPEN_EXISTING     3
+#define OPEN_ALWAYS       4
 #define TRUNCATE_EXISTING 5
 
 HANDLE CreateFileA (LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile);
@@ -53,20 +53,37 @@ BOOL GetDiskFreeSpaceA (LPCSTR lpRootPathName, LPDWORD lpSectorsPerCluster, LPDW
 DWORD GetLogicalDrives (VOID);
 DWORD GetLogicalDriveStringsA (DWORD nBufferLength, LPSTR lpBuffer);
 
+typedef struct _BY_HANDLE_FILE_INFORMATION
+{
+    DWORD dwFileAttributes;
+    FILETIME ftCreationTime;
+    FILETIME ftLastAccessTime;
+    FILETIME ftLastWriteTime;
+    DWORD dwVolumeSerialNumber;
+    DWORD nFileSizeHigh;
+    DWORD nFileSizeLow;
+    DWORD nNumberOfLinks;
+    DWORD nFileIndexHigh;
+    DWORD nFileIndexLow;
+} BY_HANDLE_FILE_INFORMATION, *PBY_HANDLE_FILE_INFORMATION, *LPBY_HANDLE_FILE_INFORMATION;
+
+BOOL SetFileInformationByHandle (HANDLE hFile, FILE_INFO_BY_HANDLE_CLASS FileInformationClass, LPVOID lpFileInformation, DWORD dwBufferSize);
+BOOL GetFileInformationByHandle (HANDLE hFile, LPBY_HANDLE_FILE_INFORMATION lpFileInformation);
+
 #ifndef UNICODE
-#define GetFileAttributes GetFileAttributesA
-#define GetFileAttributesEx GetFileAttributesExA
-#define SetFileAttributes SetFileAttributesA
-#define CreateFile CreateFileA
-#define FindFirstFile FindFirstFileA
-#define FindNextFile FindNextFileA
-#define DeleteFile(...) DeleteFileA(__VA_ARGS__)
-#define RemoveDirectory(...) RemoveDirectoryA(__VA_ARGS__)
-#define CreateDirectory(...) CreateDirectoryA(__VA_ARGS__)
-#define MoveFile(...) MoveFileA(__VA_ARGS__)
-#define CopyFile(...) CopyFileA(__VA_ARGS__)
-#define GetDiskFreeSpaceEx GetDiskFreeSpaceExA
-#define GetDiskFreeSpace GetDiskFreeSpaceA
+#define GetFileAttributes      GetFileAttributesA
+#define GetFileAttributesEx    GetFileAttributesExA
+#define SetFileAttributes      SetFileAttributesA
+#define CreateFile             CreateFileA
+#define FindFirstFile          FindFirstFileA
+#define FindNextFile           FindNextFileA
+#define DeleteFile(...)        DeleteFileA(__VA_ARGS__)
+#define RemoveDirectory(...)   RemoveDirectoryA(__VA_ARGS__)
+#define CreateDirectory(...)   CreateDirectoryA(__VA_ARGS__)
+#define MoveFile(...)          MoveFileA(__VA_ARGS__)
+#define CopyFile(...)          CopyFileA(__VA_ARGS__)
+#define GetDiskFreeSpaceEx     GetDiskFreeSpaceExA
+#define GetDiskFreeSpace       GetDiskFreeSpaceA
 #define GetLogicalDriveStrings GetLogicalDriveStringsA
 #else
 #error nxdk does not support the Unicode API

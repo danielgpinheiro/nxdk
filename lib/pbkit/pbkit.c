@@ -1,3 +1,5 @@
+// clang-format off
+
 //pbKit core functions
 
 // SPDX-License-Identifier: MIT
@@ -18,6 +20,7 @@
 #include <hal/debug.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <winapi/synchapi.h>
 
 #include "pbkit.h"
 #include "outer.h"
@@ -25,11 +28,9 @@
 #include "nv20_shader.h" //(search "nouveau" on wiki)
 
 
-
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 
 //a macro used to build up a valid method
 #define EncodeMethod(subchannel,command,nparam) ((nparam<<18)+(subchannel<<13)+command)
@@ -42,24 +43,12 @@
 #define ADDR_FBMEM                  2
 #define ADDR_AGPMEM                 3
 
-#define DMA_CLASS_2                 2
-#define DMA_CLASS_3                 3
-#define DMA_CLASS_3D                    0x3D
-
-#define GR_CLASS_30                 0x30
-#define GR_CLASS_39                 0x39
-#define GR_CLASS_62                 0x62
-#define GR_CLASS_97                 0x97
-#define GR_CLASS_9F                 0x9F
-
 #define GPU_IRQ                     3
 
 #define XTAL_16MHZ                  16.6667f
 #define DW_XTAL_16MHZ                   16666666
 
 #define MAX_EXTRA_BUFFERS               8
-
-#define MAXRAM                      0x03FFAFFF
 
 #define NONE                        -1
 
@@ -114,7 +103,7 @@ static  DWORD           *pb_DmaBuffer8; //points at 32 contiguous bytes (Dma Cha
 static  DWORD           *pb_DmaBuffer2; //points at 32 contiguous bytes (Dma Channel ID 2 buffer)
 static  DWORD           *pb_DmaBuffer7; //points at 32 contiguous bytes (Dma Channel ID 7 buffer)
 
-static  DWORD           pb_Size=512*1024;//push buffer size, must be >64Kb and a power of 2
+static  DWORD           pb_Size=PBKIT_PUSHBUFFER_SIZE;//push buffer size, must be >64Kb and a power of 2
 static  uint32_t        *pb_Head;   //points at push buffer head
 static  uint32_t        *pb_Tail;   //points at push buffer tail
 static  uint32_t        *pb_Put=NULL;   //where next command+params are to be written
@@ -138,10 +127,6 @@ static  int         pb_GrCtxID;     //Current context ID : 0,1 or NONE
 static  DWORD           pb_FifoBigInst;     //graphic contexts are stored there, and much more (addr=inst<<4+NV_PRAMIN)
 
 static  DWORD           pb_FreeInst;        //next free space in PRAMIN area (addr=inst<<4+NV_PRAMIN)
-
-static  int         pb_GammaRampIdx=0;
-static  int         pb_GammaRampbReady[3]={0,0,0};
-static  BYTE            pb_GammaRamp[3][3][256];
 
 static  int         pb_BackBufferNxt=0;
 static  int         pb_BackBufferNxtVBL=0;
@@ -238,219 +223,15 @@ static void pb_load_gr_ctx(int ctx_id);
 static NTAPI VOID pb_shutdown_notification_routine (PHAL_SHUTDOWN_REGISTRATION ShutdownRegistration);
 
 
-//private pb_text_screen functions
-
-#define ROWS    16
-#define COLS    60
-
-static  char        pb_text_screen[ROWS][COLS];
-
-static int      pb_next_row=0;
-static int      pb_next_col=0;
-
-static unsigned char systemFont[] =
-{
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,56,56,56,56,56,0,56,56,
-    108,108,0,0,0,0,0,0,0,108,254,254,108,254,254,108,
-    48,126,224,124,14,254,252,48,98,230,204,24,48,102,206,140,
-    120,220,252,120,250,222,252,118,28,28,56,0,0,0,0,0,
-    14,28,28,28,28,28,28,14,112,56,56,56,56,56,56,112,
-    0,0,0,230,124,56,124,206,0,0,28,28,127,127,28,28,
-    0,0,0,0,0,28,28,56,0,0,0,0,124,124,0,0,
-    0,0,0,0,0,0,56,56,28,28,56,56,112,112,224,224,
-    124,254,238,238,238,254,254,124,56,120,248,56,56,254,254,254,
-    252,254,14,60,112,254,254,254,252,254,14,60,14,254,254,252,
-    238,238,238,254,254,14,14,14,254,254,224,252,14,254,254,252,
-    124,252,224,252,238,254,254,124,252,254,14,14,28,28,56,56,
-    124,254,238,124,238,254,254,124,124,254,238,126,14,254,254,252,
-    0,0,28,28,0,28,28,28,0,0,28,28,0,28,28,56,
-    6,14,28,56,56,28,14,6,0,0,124,124,0,124,124,124,
-    112,56,28,14,14,28,56,112,124,254,206,28,56,0,56,56,
-    124,198,190,182,190,182,200,126,124,254,238,254,238,238,238,238,
-    252,254,206,252,206,254,254,252,124,254,238,224,238,254,254,124,
-    252,254,238,238,238,254,254,252,254,254,224,248,224,254,254,254,
-    126,254,224,248,224,224,224,224,126,254,224,238,238,254,254,124,
-    238,238,238,254,238,238,238,238,254,254,56,56,56,254,254,254,
-    254,254,14,14,238,254,254,124,238,238,252,248,252,238,238,238,
-    224,224,224,224,224,254,254,126,130,198,238,254,254,238,238,238,
-    206,238,254,254,254,254,238,230,124,254,238,238,238,254,254,124,
-    252,254,238,238,252,224,224,224,124,254,238,238,254,254,252,118,
-    252,254,238,238,252,238,238,238,126,254,224,124,14,254,254,252,
-    254,254,56,56,56,56,56,56,238,238,238,238,238,254,254,124,
-    238,238,238,238,238,238,124,56,238,238,238,254,254,238,198,130,
-    238,238,124,56,124,238,238,238,238,238,124,124,56,56,112,112,
-    254,254,28,56,112,254,254,254,124,124,112,112,112,124,124,124,
-    112,112,56,56,28,28,14,14,124,124,28,28,28,124,124,124,
-    56,124,238,198,0,0,0,0,0,0,0,0,0,254,254,254,
-    56,56,28,0,0,0,0,0,0,124,254,238,254,238,238,238,
-    0,252,254,206,252,206,254,252,0,124,254,238,224,238,254,124,
-    0,252,254,238,238,238,254,252,0,254,254,224,248,224,254,254,
-    0,126,254,224,248,224,224,224,0,126,254,224,238,238,254,124,
-    0,238,238,238,254,238,238,238,0,254,254,56,56,56,254,254,
-    0,254,254,14,14,238,254,124,0,238,238,252,248,252,238,238,
-    0,224,224,224,224,224,254,126,0,130,198,238,254,254,238,238,
-    0,206,238,254,254,254,238,230,0,124,254,238,238,238,254,124,
-    0,252,254,238,238,252,224,224,0,124,254,238,238,254,252,118,
-    0,252,254,238,238,252,238,238,0,126,254,224,124,14,254,252,
-    0,254,254,56,56,56,56,56,0,238,238,238,238,238,254,124,
-    0,238,238,238,238,238,124,56,0,238,238,238,254,238,198,130,
-    0,238,238,124,56,124,238,238,0,238,238,124,124,56,56,112,
-    0,254,254,28,56,112,254,254,60,124,112,112,112,124,124,60,
-    56,56,56,0,56,56,56,56,120,124,28,28,28,124,124,120,
-    236,254,118,0,0,0,0,0,0,16,56,124,254,254,254,254,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-};
-
-
-static void pb_scrollup(void)
-{
-    int i;
-    for(i=0;i<ROWS-1;i++)
-    memcpy(&pb_text_screen[i][0],&pb_text_screen[i+1][0],COLS);
-    memset(&pb_text_screen[ROWS-1][0],0,COLS);
-}
-
-static void pb_print_char(char c)
-{
-    if (c=='\n')
-    {
-        pb_next_row++;
-        if (pb_next_row>=ROWS) { pb_next_row=ROWS-1; pb_scrollup(); }
-        pb_next_col=0;
-    }
-    else
-    if (c=='\r')
-    {
-        pb_next_col=0;
-    }
-    else
-    if (c==8)
-    {
-        pb_next_col--;
-        if (pb_next_col<0) pb_next_col=0;
-    }
-    else
-    if (c>=32)
-    {
-        pb_text_screen[pb_next_row][pb_next_col]=c;
-        pb_next_col++;
-        if (pb_next_col>=COLS)
-        {
-            pb_next_row++;
-            if (pb_next_row>=ROWS) { pb_next_row=ROWS-1; pb_scrollup(); }
-            pb_next_col=0;
-        }
-    }
-}
-
 
 
 //private functions
-
-static void pb_set_gamma_ramp(BYTE *pGammaRamp)
-{
-    int         i;
-
-    VIDEOREG8(NV_USER_DAC_WRITE_MODE_ADDRESS)=0;    //&NV_USER_DAC_WRITE_MODE_ADDRESS_VALUE
-
-    for(i=0;i<256;i++)
-    {
-        VIDEOREG8(NV_USER_DAC_PALETTE_DATA)=pGammaRamp[i];  //&NV_USER_DAC_PALETTE_DATA_VALUE
-        VIDEOREG8(NV_USER_DAC_PALETTE_DATA)=pGammaRamp[i+256];  //&NV_USER_DAC_PALETTE_DATA_VALUE
-        VIDEOREG8(NV_USER_DAC_PALETTE_DATA)=pGammaRamp[i+512];  //&NV_USER_DAC_PALETTE_DATA_VALUE
-    }
-}
-
-
-
-
-
 static void pb_vbl_handler(void)
 {
     BYTE        old_color_addr; //important index to preserve if we are called from Dpc or Isr
 
     int     flag;
     int     next;
-    int     index;
 
     old_color_addr=VIDEOREG8(NV_PRMCIO_CRX__COLOR);
 
@@ -465,18 +246,9 @@ static void pb_vbl_handler(void)
         //screen swapping has been done already, theoretically, in ISR
         pb_BackBufferbReady[next]=0;
 
-        index=pb_GammaRampIdx;
-        if (pb_GammaRampbReady[index])
-        {
-            pb_set_gamma_ramp(&pb_GammaRamp[index][0][0]);
-            pb_GammaRampbReady[index]=0;
-            index=(index+1)%3;
-            pb_GammaRampIdx=index;
-        }
-
         VIDEOREG(NV_PGRAPH_INCREMENT)|=NV_PGRAPH_INCREMENT_READ_3D_TRIGGER;
 
-        //rotate next back buffer & gamma ramp index
+        //rotate next back buffer
         next=(next+1)%3;
         pb_BackBufferNxtVBL=next;
     }
@@ -651,8 +423,16 @@ static DWORD pb_gr_handler(void)
                             if (nsource&NV_PGRAPH_NSOURCE_DATA_ERROR_PENDING) debugPrint("GPU Error : invalid data error!\n");
                             if (nsource&NV_PGRAPH_NSOURCE_PROTECTION_ERROR_PENDING) debugPrint("GPU Error : protection error!\n");
                             if (nsource&NV_PGRAPH_NSOURCE_RANGE_EXCEPTION_PENDING) debugPrint("GPU Error : range exception error!\n");
-                            if (nsource&NV_PGRAPH_NSOURCE_LIMIT_COLOR_PENDING) debugPrint("GPU Error : color buffer limit error!\n");
-                            if (nsource&NV_PGRAPH_NSOURCE_LIMIT_ZETA_PENDING) debugPrint("GPU Error : zeta buffer limit error!\n");
+                            if (nsource&NV_PGRAPH_NSOURCE_LIMIT_COLOR_PENDING)
+                            {
+                                uint32_t limit_details = VIDEOREG(0x00400800);
+                                debugPrint("GPU Error : color buffer limit error! 0x%X\n", limit_details);
+                            }
+                            if (nsource&NV_PGRAPH_NSOURCE_LIMIT_ZETA_PENDING)
+                            {
+                                uint32_t limit_details = VIDEOREG(0x00400800);
+                                debugPrint("GPU Error : zeta buffer limit error! 0x%X\n", limit_details);
+                            }
                             if (nsource&NV_PGRAPH_NSOURCE_DMA_R_PROTECTION_PENDING) debugPrint("GPU Error : dma read protection error!\n");
                             if (nsource&NV_PGRAPH_NSOURCE_DMA_W_PROTECTION_PENDING) debugPrint("GPU Error : dma write protection error!\n");
                             if (nsource&NV_PGRAPH_NSOURCE_FORMAT_EXCEPTION_PENDING) debugPrint("GPU Error : format exception error!\n");
@@ -692,7 +472,9 @@ static DWORD pb_gr_handler(void)
 
                             //calling XReboot() from here doesn't work well.
 
-                            while(1) {};
+                            while(1) {
+                              Sleep(2000);
+                            };
                         }
                     }
                 }
@@ -1648,43 +1430,65 @@ static void pb_3D_init(void)
 #endif
 }
 
+static inline void pb_create_gr_instance(int ChannelID,
+                                         int Class,
+                                         DWORD instance,
+                                         DWORD flags,
+                                         DWORD flags3D,
+                                         struct s_CtxDma *pGrObject)
+{
+    DWORD offset = instance << 4;
+    VIDEOREG(NV_PRAMIN + offset + 0x00) = flags;
+    VIDEOREG(NV_PRAMIN + offset + 0x04) = flags3D;
+    VIDEOREG(NV_PRAMIN + offset + 0x08) = 0;
+    VIDEOREG(NV_PRAMIN + offset + 0x0C) = 0;
 
+    memset(pGrObject,0,sizeof(struct s_CtxDma));
 
+    pGrObject->ChannelID = ChannelID;
+    pGrObject->Class = Class;
+    pGrObject->isGr = 1;
+    pGrObject->Inst = instance;
+}
 
-
-static void pb_create_gr_ctx(   int ChannelID,
-                int Class,
-                struct s_CtxDma *pGrObject  )
+void pb_create_gr_ctx(int ChannelID,
+                      int Class,
+                      struct s_CtxDma *pGrObject)
 {
     DWORD           flags;
     DWORD           flags3D;
-
-    int         size;
-
+    int             size;
     DWORD           Inst;
 
+    flags=Class&0x000000FF;
     flags3D=0;
 
-    if (    (Class!=GR_CLASS_30)&&
-        (Class!=GR_CLASS_39)&&
-        (Class!=GR_CLASS_62)&&
-        (Class!=GR_CLASS_97)&&
-        (Class!=GR_CLASS_9F)    )
+    switch (Class)
     {
+    case GR_CLASS_97:
+        size=0x330; //816 bytes
+        flags3D=0x00000A00;
+        break;
+    case GR_CLASS_39:
+        size=16;        //16 bytes
+        flags|=0x01000000;
+        break;
+    case GR_CLASS_12:
+    case GR_CLASS_19:
+    case GR_CLASS_30:
+    case GR_CLASS_62:
+    case GR_CLASS_72:
+    case GR_CLASS_9F:
+        size=16;        //16 bytes
+        break;
+    default:
         //"CreateGrObject invalid class number"
         size=Class;
-    }
-    else
-    {
-        size=16;        //16 bytes
-        if (Class==GR_CLASS_97)
-        {
-            size=0x330; //816 bytes
-            flags3D=1;
-        }
+        break;
     }
 
-    Inst=pb_FreeInst; pb_FreeInst+=(size>>4);
+    Inst=pb_FreeInst;
+    pb_FreeInst+=(size>>4);
 
     if (flags3D)
     {
@@ -1692,26 +1496,7 @@ static void pb_create_gr_ctx(   int ChannelID,
         pb_3D_init();
     }
 
-
-    flags=Class&0x000000FF;
-    flags3D=0x00000000;
-
-    if (Class==GR_CLASS_39) flags|=0x01000000;
-
-    if (Class==GR_CLASS_97) flags3D=0x00000A00;
-
-    VIDEOREG(NV_PRAMIN+(Inst<<4)+0x00)=flags;
-    VIDEOREG(NV_PRAMIN+(Inst<<4)+0x04)=flags3D;
-    VIDEOREG(NV_PRAMIN+(Inst<<4)+0x08)=0;
-    VIDEOREG(NV_PRAMIN+(Inst<<4)+0x0C)=0;
-
-
-    memset(pGrObject,0,sizeof(struct s_CtxDma));
-
-    pGrObject->ChannelID=ChannelID;
-    pGrObject->Class=Class;
-    pGrObject->isGr=1;
-    pGrObject->Inst=Inst;
+    pb_create_gr_instance(ChannelID, Class, Inst, flags, flags3D, pGrObject);
 }
 
 
@@ -1916,8 +1701,7 @@ static void set_draw_buffer(DWORD buffer_addr)
 
     depth_stencil=1;
 
-    if (depth_stencil!=-1) //don't care
-    if (pb_DepthStencilLast!=depth_stencil) //changed?
+    if (depth_stencil != -1 && pb_DepthStencilLast != depth_stencil) // stencil changed?
     {
         //DMA channel 10 is used by GPU in order to render depth stencil
         if (depth_stencil)
@@ -1998,92 +1782,6 @@ DWORD pb_wait_for_vbl(void)
 }
 
 
-void pb_print(const char *format, ...)
-{
-    char    buffer[512];
-    int     i;
-
-    va_list argList;
-    va_start(argList, format);
-    vsprintf(buffer, format, argList);
-    va_end(argList);
-
-    for(i=0;i<strlen(buffer);i++) pb_print_char(buffer[i]);
-}
-
-void pb_printat(int row, int col, char *format, ...)
-{
-    char    buffer[512];
-    int     i;
-
-    if ((row>=0)&&(row<ROWS)) pb_next_row=row;
-    if ((col>=0)&&(col<COLS)) pb_next_col=col;
-
-    va_list argList;
-    va_start(argList, format);
-    vsprintf(buffer, format, argList);
-    va_end(argList);
-
-    for(i=0;i<strlen(buffer);i++) pb_print_char(buffer[i]);
-}
-
-
-
-void pb_erase_text_screen(void)
-{
-    pb_next_row=0;
-    pb_next_col=0;
-    memset(pb_text_screen,0,sizeof(pb_text_screen));
-}
-
-void pb_draw_text_screen(void)
-{
-    int i,j,k,l,m,x1,x2,y;
-    unsigned char c;
-
-    for(i=0;i<ROWS;i++)
-    for(j=0;j<COLS;j++)
-    {
-        c=pb_text_screen[i][j];
-        if ((c==' ')||(c=='\t')) pb_text_screen[i][j]=0;
-    }
-
-    //convert pb_text_screen characters into push buffer commands
-    //TODO: replace rectangle fill with texture copy when available!
-    for(i=0;i<ROWS;i++)
-    for(j=0;j<COLS;j++)
-    {
-        c=pb_text_screen[i][j];
-        if (c)
-        {
-            for(l=0,x1=-1,x2=-1;l<8;l++,x1=-1,x2=-1)
-            for(k=0,m=0x80;k<8;k++,m>>=1)
-            if (systemFont[c*8+l]&m)
-            {
-                if (x1>=0)
-                    x2=20+j*10+k;
-                else
-                    x1=20+j*10+k;
-            }
-            else
-            {
-                if (x2>=0)
-                {
-                    y=25+i*25+l*2;
-                    pb_fill(x1,y,x2-x1+1,2,0xFFFFFF);
-                    x1=x2=-1;
-                }
-                else
-                if (x1>=0)
-                {
-                    y=25+i*25+l*2;
-                    pb_fill(x1,y,1,2,0xFFFFFF);
-                    x1=-1;
-                }
-            }
-        }
-    }
-}
 
 
 void pb_extra_buffers(int n)
@@ -2245,109 +1943,6 @@ void pb_push_to(DWORD subchannel, uint32_t *p, DWORD command, DWORD nparam)
     *(p+0)=EncodeMethod(subchannel,command,nparam);
 }
 
-uint32_t *pb_push1_to(DWORD subchannel, uint32_t *p, DWORD command, DWORD param1)
-{
-    pb_push_to(subchannel,p,command,1);
-    *(p+1)=param1;
-    return p+2;
-}
-
-uint32_t *pb_push2_to(DWORD subchannel, uint32_t *p, DWORD command, DWORD param1, DWORD param2)
-{
-    pb_push_to(subchannel,p,command,2);
-    *(p+1)=param1;
-    *(p+2)=param2;
-    return p+3;
-}
-
-uint32_t *pb_push3_to(DWORD subchannel, uint32_t *p, DWORD command, DWORD param1, DWORD param2, DWORD param3)
-{
-    pb_push_to(subchannel,p,command,3);
-    *(p+1)=param1;
-    *(p+2)=param2;
-    *(p+3)=param3;
-    return p+4;
-}
-
-uint32_t *pb_push4_to(DWORD subchannel, uint32_t *p, DWORD command, DWORD param1, DWORD param2, DWORD param3, DWORD param4)
-{
-    pb_push_to(subchannel,p,command,4);
-    *(p+1)=param1;
-    *(p+2)=param2;
-    *(p+3)=param3;
-    *(p+4)=param4;
-    return p+5;
-}
-
-uint32_t *pb_push4f_to(DWORD subchannel, uint32_t *p, DWORD command, float param1, float param2, float param3, float param4)
-{
-    pb_push_to(subchannel,p,command,4);
-    *((float *)(p+1))=param1;
-    *((float *)(p+2))=param2;
-    *((float *)(p+3))=param3;
-    *((float *)(p+4))=param4;
-    return p+5;
-}
-
-void pb_push(uint32_t *p, DWORD command, DWORD nparam)
-{
-    pb_push_to(SUBCH_3D,p,command,nparam);
-}
-
-uint32_t *pb_push1(uint32_t *p, DWORD command, DWORD param1)
-{
-    return pb_push1_to(SUBCH_3D,p,command,param1);
-}
-
-uint32_t *pb_push2(uint32_t *p, DWORD command, DWORD param1, DWORD param2)
-{
-    return pb_push2_to(SUBCH_3D,p,command,param1,param2);
-}
-
-uint32_t *pb_push3(uint32_t *p, DWORD command, DWORD param1, DWORD param2, DWORD param3)
-{
-    return pb_push3_to(SUBCH_3D,p,command,param1,param2,param3);
-}
-
-uint32_t *pb_push4(uint32_t *p, DWORD command, DWORD param1, DWORD param2, DWORD param3, DWORD param4)
-{
-    return pb_push4_to(SUBCH_3D,p,command,param1,param2,param3,param4);
-}
-
-uint32_t *pb_push4f(uint32_t *p, DWORD command, float param1, float param2, float param3, float param4)
-{
-    return pb_push4f_to(SUBCH_3D,p,command,param1,param2,param3,param4);
-}
-
-uint32_t *pb_push_transposed_matrix(uint32_t *p, DWORD command, float *m)
-{
-    pb_push_to(SUBCH_3D,p++,command,16);
-
-    *((float *)p++)=m[_11];
-    *((float *)p++)=m[_21];
-    *((float *)p++)=m[_31];
-    *((float *)p++)=m[_41];
-
-    *((float *)p++)=m[_12];
-    *((float *)p++)=m[_22];
-    *((float *)p++)=m[_32];
-    *((float *)p++)=m[_42];
-
-    *((float *)p++)=m[_13];
-    *((float *)p++)=m[_23];
-    *((float *)p++)=m[_33];
-    *((float *)p++)=m[_43];
-
-    *((float *)p++)=m[_14];
-    *((float *)p++)=m[_24];
-    *((float *)p++)=m[_34];
-    *((float *)p++)=m[_44];
-
-    return p;
-}
-
-
-
 void pb_show_front_screen(void)
 {
     VIDEOREG(PCRTC_START)=pb_FBAddr[pb_front_index]&0x03FFFFFF;
@@ -2409,47 +2004,6 @@ void pb_set_viewport(int dwx,int dwy,int width,int height,float zmin,float zmax)
     p=pb_push2(p,NV20_TCL_PRIMITIVE_3D_DEPTH_RANGE_NEAR,dwzminscaled,dwzmaxscaled);
     pb_end(p);
 }
-
-
-
-void pb_fill(int x, int y, int w, int h, DWORD color)
-{
-    uint32_t    *p;
-
-    int     x1,y1,x2,y2;
-
-    x1=x;
-    y1=y;
-    x2=x+w;
-    y2=y+h;
-
-    switch(pb_ColorFmt) {
-    case NV097_SET_SURFACE_FORMAT_COLOR_LE_X1R5G5B5_Z1R5G5B5:
-    case NV097_SET_SURFACE_FORMAT_COLOR_LE_X1R5G5B5_O1R5G5B5:
-        color=((color>>16)&0x8000)|((color>>7)&0x7C00)|((color>>5)&0x03E0)|((color>>3)&0x001F);
-        break;
-    case NV097_SET_SURFACE_FORMAT_COLOR_LE_R5G6B5:
-        color=((color>>8)&0xF800)|((color>>5)&0x07E0)|((color>>3)&0x001F);
-        break;
-    case NV097_SET_SURFACE_FORMAT_COLOR_LE_A8R8G8B8:
-        // Nothing to do, input is A8R8G8B8
-        break;
-    default:
-        assert(false);
-        break;
-    }
-
-    p=pb_begin();
-    pb_push(p++,NV20_TCL_PRIMITIVE_3D_CLEAR_VALUE_HORIZ,2);     //sets rectangle coordinates
-    *(p++)=((x2-1)<<16)|x1;
-    *(p++)=((y2-1)<<16)|y1;
-    pb_push(p++,NV20_TCL_PRIMITIVE_3D_CLEAR_VALUE_DEPTH,3);     //sets data used to fill in rectangle
-    *(p++)=0;           //(depth<<8)|stencil
-    *(p++)=color;           //color
-    *(p++)=0xF0;            //triggers the HW rectangle fill (0x03 for D&S)
-    pb_end(p);
-}
-
 
 
 
@@ -2565,6 +2119,8 @@ void pb_kill(void)
     while(pb_BackBufferbReady[pb_BackBufferNxt]);
 
     pb_running=0;
+    pb_uninstall_gpu_interrupt();
+    KeRemoveQueueDpc(&pb_DPCObject);
 
     if (pb_ExtraBuffersCount) MmFreeContiguousMemory((PVOID)pb_EXAddr[0]);
     if (pb_DepthStencilAddr) MmFreeContiguousMemory((PVOID)pb_DepthStencilAddr);
@@ -2646,13 +2202,12 @@ void pb_kill(void)
     VIDEOREG(NV_PMC_INTR_EN_0)=pb_OldMCInterrupt;
     VIDEOREG(PCRTC_START)=pb_OldVideoStart;
 
-    pb_uninstall_gpu_interrupt();
-
     NtClose(pb_VBlankEvent);
 }
 
 
-void pb_set_color_format(unsigned int fmt, bool swizzled) {
+void pb_set_color_format(unsigned int fmt, bool swizzled)
+{
     pb_ColorFmt = fmt;
     assert(swizzled == false);
 }
@@ -2667,7 +2222,7 @@ int pb_init(void)
 
     uint32_t        baseaddr,baseaddr2;
 
-    int         i,j,k;
+    int         i;
 
     uint32_t        *p;
 
@@ -2753,9 +2308,13 @@ int pb_init(void)
     pb_FifoChannelsMode=NV_PFIFO_MODE_ALL_PIO;
     pb_FifoChannelID=0;
 
-    pb_GammaRampIdx=0;
-    for(i=0;i<3;i++) pb_GammaRampbReady[i]=0;
-    for(k=0;k<3;k++) for(i=0;i<3;i++) for(j=0;j<256;j++) pb_GammaRamp[k][i][j]=j;
+    PB_GAMMA_RAMP gammaRamp;
+    for (i = 0; i < 256; i++) {
+        gammaRamp.red[i] = i;
+        gammaRamp.green[i] = i;
+        gammaRamp.blue[i] = i;
+    }
+    pb_set_gamma_ramp(&gammaRamp);
 
     pb_BackBufferNxt=0;
     for(i=0;i<5;i++) pb_BackBufferbReady[i]=0;
@@ -2767,17 +2326,15 @@ int pb_init(void)
     pb_FrameBuffersAddr=0;
 
 
-    pb_DmaBuffer8=MmAllocateContiguousMemoryEx(32,0,MAXRAM,0,4);
-    pb_DmaBuffer2=MmAllocateContiguousMemoryEx(32,0,MAXRAM,0,4);
-    pb_DmaBuffer7=MmAllocateContiguousMemoryEx(32,0,MAXRAM,0,4);
-        //NumberOfBytes,LowestAcceptableAddress,HighestAcceptableAddress,Alignment,ProtectionType
+    pb_DmaBuffer8 = MmAllocateContiguousMemoryEx(32, 0, MAXRAM, 0, PAGE_READWRITE);
+    pb_DmaBuffer2 = MmAllocateContiguousMemoryEx(32, 0, MAXRAM, 0, PAGE_READWRITE);
+    pb_DmaBuffer7 = MmAllocateContiguousMemoryEx(32, 0, MAXRAM, 0, PAGE_READWRITE);
     if ((pb_DmaBuffer8==NULL)||(pb_DmaBuffer2==NULL)||(pb_DmaBuffer7==NULL)) return -2;
     memset(pb_DmaBuffer8,0,32);
     memset(pb_DmaBuffer2,0,32);
     memset(pb_DmaBuffer7,0,32);
 
-    pb_Head=MmAllocateContiguousMemoryEx(pb_Size+8*1024,0,MAXRAM,0,0x404);
-        //NumberOfBytes,LowestAcceptableAddress,HighestAcceptableAddress,Alignment OPTIONAL,ProtectionType
+    pb_Head = MmAllocateContiguousMemoryEx(pb_Size+8*1024, 0, MAXRAM, 0, PAGE_READWRITE | PAGE_WRITECOMBINE);
     if (pb_Head==NULL) return -3;
 
     memset(pb_Head,0,pb_Size+8*1024);
@@ -3430,8 +2987,7 @@ int pb_init(void)
     //Huge alignment enforcement (16 Kb aligned!) for the global size
     FBSize=(FBSize+0x3FFF)&0xFFFFC000;
 
-    FBAddr=(DWORD)MmAllocateContiguousMemoryEx(FBSize,0,0x03FFB000,0x4000,0x404);
-        //NumberOfBytes,LowestAcceptableAddress,HighestAcceptableAddress,Alignment OPTIONAL,ProtectionType
+    FBAddr = (DWORD)MmAllocateContiguousMemoryEx(FBSize, 0, 0x03FFB000, 0x4000, PAGE_READWRITE | PAGE_WRITECOMBINE);
 
     pb_FBGlobalSize=FBSize;
 
@@ -3503,8 +3059,7 @@ int pb_init(void)
     //Huge alignment enforcement (16 Kb aligned!) for the global size
     DSSize=(DSSize+0x3FFF)&0xFFFFC000;
 
-    DSAddr=(DWORD)MmAllocateContiguousMemoryEx(DSSize,0,0x03FFB000,0x4000,0x404);
-        //NumberOfBytes,LowestAcceptableAddress,HighestAcceptableAddress,Alignment OPTIONAL,ProtectionType
+    DSAddr = (DWORD)MmAllocateContiguousMemoryEx(DSSize, 0, 0x03FFB000, 0x4000, PAGE_READWRITE | PAGE_WRITECOMBINE);
 
     pb_DepthStencilAddr=DSAddr;
     if (!DSAddr)
@@ -3555,9 +3110,7 @@ int pb_init(void)
         //Huge alignment enforcement (16 Kb aligned!) for the global size
         EXSize=(EXSize+0x3FFF)&0xFFFFC000;
 
-        EXAddr=(DWORD)MmAllocateContiguousMemoryEx(EXSize,0,0x03FFB000,0x4000,0x404);
-        //NumberOfBytes,LowestAcceptableAddress,HighestAcceptableAddress,Alignment OPTIONAL,ProtectionType
-
+        EXAddr = (DWORD)MmAllocateContiguousMemoryEx(EXSize, 0, 0x03FFB000, 0x4000, PAGE_READWRITE | PAGE_WRITECOMBINE);
         if (!EXAddr)
         {
             pb_kill();

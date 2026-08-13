@@ -83,7 +83,7 @@
  * ATTENTION: this does not work when tcpip_input() is called from
  * interrupt context!
  */
-#define LWIP_TCPIP_CORE_LOCKING_INPUT   1
+#define LWIP_TCPIP_CORE_LOCKING_INPUT   0
 
 /**
  * SYS_LIGHTWEIGHT_PROT==1: enable inter-task protection (and task-vs-interrupt
@@ -104,7 +104,20 @@
  * instead of the lwip internal allocator. Can save code size if you
  * already use it.
  */
-#define MEM_LIBC_MALLOC                 1
+#define MEM_LIBC_MALLOC                 0
+
+/**
+ * MEM_CUSTOM_ALLOCATOR==1: Use malloc/free/realloc provided by a custom
+ * implementation instead of the lwip internal allocator. Can save code size if
+ * you already use it. If enabled, you have to define those functions:
+ *  \#define MEM_CUSTOM_FREE   my_free
+ *  \#define MEM_CUSTOM_MALLOC my_malloc
+ *  \#define MEM_CUSTOM_CALLOC my_calloc
+ */
+#define MEM_CUSTOM_ALLOCATOR            1
+#define MEM_CUSTOM_FREE   nxdk_lwip_free
+#define MEM_CUSTOM_MALLOC nxdk_lwip_malloc
+#define MEM_CUSTOM_CALLOC nxdk_lwip_calloc
 
 /**
  * MEMP_MEM_MALLOC==1: Use mem_malloc/mem_free instead of the lwip pool allocator.
@@ -178,7 +191,7 @@
  * a fragmented IP packet waits for all fragments to arrive. If not all fragments arrived
  * in this time, the whole packet is discarded.
  */
-#define IP_REASS_MAXAGE                 3
+#define IP_REASS_MAXAGE                 15
 
 /**
  * IP_REASS_MAX_PBUFS: Total maximum amount of pbufs waiting to be reassembled.

@@ -2,11 +2,11 @@
 
 // SPDX-FileCopyrightText: 2019-2021 Stefan Schmidt
 
-#include <fileapi.h>
-#include <winerror.h>
 #include <assert.h>
+#include <fileapi.h>
 #include <stdbool.h>
 #include <string.h>
+#include <winerror.h>
 #include <xboxkrnl/xboxkrnl.h>
 
 HANDLE CreateFileA (LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
@@ -77,7 +77,7 @@ HANDLE CreateFileA (LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
         if (status == STATUS_OBJECT_NAME_COLLISION) {
             SetLastError(ERROR_FILE_EXISTS);
         } else if (status == STATUS_FILE_IS_A_DIRECTORY) {
-            if (lpFileName[path.Length-1] == '\\') {
+            if (lpFileName[path.Length - 1] == '\\') {
                 SetLastError(ERROR_PATH_NOT_FOUND);
             } else {
                 SetLastError(ERROR_ACCESS_DENIED);
@@ -103,12 +103,42 @@ BOOL ReadFile (HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead, LPDWOR
     NTSTATUS status;
     IO_STATUS_BLOCK ioStatusBlock;
 
-    // overlapped I/O not supported yet
-    assert(!lpOverlapped);
+    if (lpOverlapped == NULL) {
+        // A null pointer makes the code crash on Windows, we'd rather catch it
+        assert(lpNumberOfBytesRead);
+    }
 
-    // A null pointer makes the code crash on Windows, we'd rather catch it
-    assert(lpNumberOfBytesRead);
-    *lpNumberOfBytesRead = 0;
+    if (lpNumberOfBytesRead) {
+        *lpNumberOfBytesRead = 0;
+    }
+
+    if (lpOverlapped) {
+        LARGE_INTEGER overlappedOffset = {
+            .LowPart = lpOverlapped->Offset,
+            .HighPart = lpOverlapped->OffsetHigh,
+        };
+
+        // Internal contains the status code for the I/O request. Set to STATUS_PENDING at the start of the request.
+        lpOverlapped->Internal = (DWORD)STATUS_PENDING;
+        // InternalHigh contains the actual number of bytes transferred for the I/O request
+        lpOverlapped->InternalHigh = 0;
+
+        status = NtReadFile(hFile, lpOverlapped->hEvent, NULL, NULL, (PIO_STATUS_BLOCK)&lpOverlapped->Internal,
+                            lpBuffer, nNumberOfBytesToRead, &overlappedOffset);
+
+        // The read can finish immediately. Handle this case
+        if (NT_SUCCESS(status) && status != STATUS_PENDING) {
+            if (lpNumberOfBytesRead) {
+                *lpNumberOfBytesRead = (DWORD)lpOverlapped->InternalHigh;
+            }
+            return TRUE;
+        } else if (status == STATUS_END_OF_FILE) {
+            *lpNumberOfBytesRead = 0;
+            return TRUE;
+        }
+        SetLastError(RtlNtStatusToDosError(status));
+        return FALSE;
+    }
 
     status = NtReadFile(hFile, NULL, NULL, NULL, &ioStatusBlock, lpBuffer, nNumberOfBytesToRead, NULL);
 
@@ -139,12 +169,39 @@ BOOL WriteFile (HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite, LPD
     NTSTATUS status;
     IO_STATUS_BLOCK ioStatusBlock;
 
-    // overlapped I/O not supported yet
-    assert(!lpOverlapped);
+    if (lpOverlapped == NULL) {
+        // A null pointer makes the code crash on Windows, we'd rather catch it
+        assert(lpNumberOfBytesWritten);
+    }
 
-    // A null pointer makes the code crash on Windows, we'd rather catch it
-    assert(lpNumberOfBytesWritten);
-    *lpNumberOfBytesWritten = 0;
+    if (lpNumberOfBytesWritten) {
+        *lpNumberOfBytesWritten = 0;
+    }
+
+    if (lpOverlapped) {
+        LARGE_INTEGER overlappedOffset = {
+            .LowPart = lpOverlapped->Offset,
+            .HighPart = lpOverlapped->OffsetHigh,
+        };
+
+        // Internal contains the status code for the I/O request. Set to STATUS_PENDING at the start of the request
+        lpOverlapped->Internal = (DWORD)STATUS_PENDING;
+        // InternalHigh contains the actual number of bytes transferred for the I/O request
+        lpOverlapped->InternalHigh = 0;
+
+        status = NtWriteFile(hFile, lpOverlapped->hEvent, NULL, NULL, (PIO_STATUS_BLOCK)&lpOverlapped->Internal,
+                             (PVOID)lpBuffer, nNumberOfBytesToWrite, &overlappedOffset);
+
+        // The write can finish immediately. Handle this case
+        if (NT_SUCCESS(status) && status != STATUS_PENDING) {
+            if (lpNumberOfBytesWritten) {
+                *lpNumberOfBytesWritten = (DWORD)lpOverlapped->InternalHigh;
+            }
+            return TRUE;
+        }
+        SetLastError(RtlNtStatusToDosError(status));
+        return FALSE;
+    }
 
     status = NtWriteFile(hFile, NULL, NULL, NULL, &ioStatusBlock, (PVOID)lpBuffer, nNumberOfBytesToWrite, NULL);
 
@@ -284,7 +341,7 @@ BOOL SetFilePointerEx (HANDLE hFile, LARGE_INTEGER liDistanceToMove, PLARGE_INTE
         case FILE_CURRENT:
             status = NtQueryInformationFile(hFile, &ioStatusBlock, &positionInfo, sizeof(positionInfo), FilePositionInformation);
 
-            if(!NT_SUCCESS(status)) {
+            if (!NT_SUCCESS(status)) {
                 SetLastError(RtlNtStatusToDosError(status));
                 return FALSE;
             }

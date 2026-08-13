@@ -9,7 +9,8 @@
 #include <windef.h>
 #include <xboxkrnl/ntstatus.h>
 
-typedef struct _FILETIME {
+typedef struct _FILETIME
+{
     DWORD dwLowDateTime;
     DWORD dwHighDateTime;
 } FILETIME, *LPFILETIME;
@@ -58,5 +59,35 @@ typedef struct _SYSTEMTIME
 #define EXCEPTION_INVALID_DISPOSITION      STATUS_INVALID_DISPOSITION
 #define EXCEPTION_GUARD_PAGE               STATUS_GUARD_PAGE_VIOLATION
 #define EXCEPTION_INVALID_HANDLE           STATUS_INVALID_HANDLE
+
+typedef enum _FILE_INFO_BY_HANDLE_CLASS
+{
+    FileBasicInfo,
+    FileStandardInfo,
+    FileNameInfo,
+    FileRenameInfo,
+    FileDispositionInfo,
+    FileAllocationInfo,
+    FileEndOfFileInfo,
+    FileStreamInfo,
+    FileCompressionInfo,
+    FileAttributeTagInfo,
+    FileIdBothDirectoryInfo,
+    FileIdBothDirectoryRestartInfo,
+    FileIoPriorityHintInfo,
+    FileRemoteProtocolInfo,
+    FileFullDirectoryInfo,
+    FileFullDirectoryRestartInfo,
+    FileStorageInfo,
+    FileAlignmentInfo,
+    FileIdInfo,
+    FileIdExtdDirectoryInfo,
+    FileIdExtdDirectoryRestartInfo,
+    FileDispositionInfoEx,
+    FileRenameInfoEx,
+    FileCaseSensitiveInfo,
+    FileNormalizedNameInfo,
+    MaximumFileInfoByHandleClass
+} FILE_INFO_BY_HANDLE_CLASS, *PFILE_INFO_BY_HANDLE_CLASS;
 
 #endif

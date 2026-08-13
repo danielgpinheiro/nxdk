@@ -3,7 +3,7 @@
 // SPDX-FileCopyrightText: 2017-2023 Stefan Schmidt
 // SPDX-FileCopyrightText: 2018-2021 Jannik Vogel
 // SPDX-FileCopyrightText: 2018 Sean Koppenhafer
-// SPDX-FileCopyrightText: 2022 Erik Abair
+// SPDX-FileCopyrightText: 2022-2025 Erik Abair
 
 /**
  * @file xboxkrnl.h
@@ -65,7 +65,13 @@ extern "C"
 #define AV_PACK_SVIDEO 0x00000006
 
 typedef ULONG PHYSICAL_ADDRESS, *PPHYSICAL_ADDRESS;
+
 typedef UCHAR KIRQL, *PKIRQL;
+
+#define PASSIVE_LEVEL 0
+#define APC_LEVEL 1
+#define DISPATCH_LEVEL 2
+
 typedef ULONG PFN_COUNT;
 typedef ULONG PFN_NUMBER, *PPFN_NUMBER;
 typedef LONG KPRIORITY;
@@ -178,7 +184,7 @@ typedef struct _TIME_FIELDS
     SHORT Hour; /**< Specifies a value from 0 to 23 */
     SHORT Minute; /**< Specifies a value from 0 to 59 */
     SHORT Second; /**< Specifies a value from 0 to 59 */
-    SHORT Millisecond; /**< Specifies a value from 0 to 999 */
+    SHORT Milliseconds; /**< Specifies a value from 0 to 999 */
     SHORT Weekday; /**< Specifies a value from 0 to 6 (Sunday to Saturday) */
 } TIME_FIELDS, *PTIME_FIELDS;
 
@@ -699,6 +705,19 @@ typedef struct _LAUNCH_DATA_PAGE
 #define LDT_LAUNCH_DASHBOARD      1
 #define LDT_FROM_DASHBOARD        2
 #define LDT_NONE 0xFFFFFFFF
+
+#define LDT_LAUNCH_DASHBOARD_REASON_NONE                      0
+#define LDT_LAUNCH_DASHBOARD_REASON_ERROR                     1
+#define LDT_LAUNCH_DASHBOARD_REASON_SAVEDATA                  2
+#define LDT_LAUNCH_DASHBOARD_REASON_SETTINGS                  3
+#define LDT_LAUNCH_DASHBOARD_REASON_MUSIC                     4
+#define LDT_LAUNCH_DASHBOARD_REASON_NETWORK                   6
+#define LDT_LAUNCH_DASHBOARD_REASON_NEW_ACCOUNT               7
+#define LDT_LAUNCH_DASHBOARD_REASON_SERVER_INFO               8
+#define LDT_LAUNCH_DASHBOARD_REASON_SHOW_POLICIES             9
+#define LDT_LAUNCH_DASHBOARD_REASON_ONLINE_MENU               10
+#define LDT_LAUNCH_DASHBOARD_REASON_FORCE_ACCOUNT_NAME_CHANGE 11
+#define LDT_LAUNCH_DASHBOARD_REASON_FORCE_BILLING_CHANGE      12
 
 typedef struct _DISPATCHER_HEADER
 {
@@ -1610,7 +1629,7 @@ XBAPI VOID NTAPI XcUpdateCrypto
  * Updates the internal state of the SHA-1 algorithm by hashing some input data.
  * @param pbSHAContext A pointer to the buffer holding the internal state of the algorithm
  * @param pbInput A pointer to the bytes which are to get hashed
- * @oaram dwInputLength The number of bytes in the buffer given in the pbInput parameter
+ * @param dwInputLength The number of bytes in the buffer given in the pbInput parameter
  */
 XBAPI VOID NTAPI XcSHAUpdate
 (
@@ -1784,6 +1803,28 @@ XBAPI VOID NTAPI WRITE_PORT_BUFFER_UCHAR
     IN ULONG Count
 );
 
+#ifdef XBOXKRNL_PREFER_KERNEL_EXPORT
+
+/**
+ * Fills a specified memory area with a specified value
+ * @param Destination A pointer to the memory block which is to be filled
+ * @param Length The length of the memory block which is to be filled
+ * @param Fill The byte-value with which the memory block will be filled
+ */
+XBAPI VOID NTAPI RtlFillMemory
+(
+    PVOID Destination,
+    ULONG Length,
+    UCHAR Fill
+);
+
+XBAPI VOID NTAPI RtlMoveMemory
+(
+    PVOID Destination,
+    CONST PVOID Source,
+    ULONG Length
+);
+
 /**
  * Fills a specified memory area with zeroes
  * @param Destination A pointer to the memory block which is to be filled
@@ -1794,6 +1835,16 @@ XBAPI VOID NTAPI RtlZeroMemory
     IN VOID UNALIGNED *Destination,
     IN SIZE_T Length
 );
+
+#else
+
+#include <string.h>
+
+#define RtlFillMemory(Destination, Length, Fill) ((void)memset((Destination), (Fill), (Length)))
+#define RtlMoveMemory(Destination, Source, Length) ((void)memmove((Destination), (Source), (Length)))
+#define RtlZeroMemory(Destination, Length) ((void)memset((Destination), 0, (Length)))
+
+#endif
 
 XBAPI ULONG NTAPI RtlWalkFrameChain
 (
@@ -1987,13 +2038,6 @@ XBAPI NTSTATUS NTAPI RtlMultiByteToUnicodeN
     ULONG BytesInMultiByteString
 );
 
-XBAPI VOID NTAPI RtlMoveMemory
-(
-    PVOID Destination,
-    CONST PVOID *Source,
-    ULONG Length
-);
-
 XBAPI VOID NTAPI RtlMapGenericMask
 (
     PACCESS_MASK AccessMask,
@@ -2107,19 +2151,6 @@ XBAPI VOID NTAPI RtlFillMemoryUlong
     PVOID Destination,
     SIZE_T Length,
     ULONG Pattern
-);
-
-/**
- * Fills a specified memory area with a specified value
- * @param Destination A pointer to the memory block which is to be filled
- * @param Length The length of the memory block which is to be filled
- * @param Fill The byte-value with which the memory block will be filled
- */
-XBAPI VOID NTAPI RtlFillMemory
-(
-    PVOID Destination,
-    ULONG Length,
-    UCHAR Fill
 );
 
 XBAPI LARGE_INTEGER NTAPI RtlExtendedMagicDivide
@@ -3051,7 +3082,7 @@ XBAPI NTSTATUS NTAPI NtCreateSemaphore
  * Creates a mutant object (mutex), sets its initial count to one (which means "signaled"), and opens a handle to the object.
  * @param MutantHandle A pointer to a variable that receives the mutant object handle.
  * @param ObjectAttributes A pointer to a OBJECT_ATTRIBUTES-structure that specifies object attributes.
- * @pararm InitialOwner A boolean value that specifies whether the creator of the mutant object wants immediate ownership.
+ * @param InitialOwner A boolean value that specifies whether the creator of the mutant object wants immediate ownership.
  * @return The status of the operation.
  */
 XBAPI NTSTATUS NTAPI NtCreateMutant
@@ -4294,7 +4325,7 @@ XBAPI OBJECT_TYPE ExEventObjectType;
 
 /**
  * Allocates pool memory and returns a pointer to the allocated block.
- * @oaram NumberOfBytes The number of bytes to allocate.
+ * @param NumberOfBytes The number of bytes to allocate.
  * @param Tag The pool tag to use for the allocated memory. Specify the pool tag as a character literal of up to four characters delimited by single quotation marks (for example, 'Tag1'). The string is usually specified in reverse order (for example, '1gaT'). Each ASCII character in the tag must be a value in the range 0x20 (space) to 0x126 (tilde). Each allocation code path should use a unique pool tag to help debuggers and verifiers identify the code path.
  * @return NULL if there is insufficient memory in the free pool to satisfy the request. Otherwise, the routine returns a pointer to the allocated memory.
  */
@@ -4306,7 +4337,7 @@ XBAPI PVOID NTAPI ExAllocatePoolWithTag
 
 /**
  * Allocates pool memory and returns a pointer to the allocated block.
- * @oaram NumberOfBytes The number of bytes to allocate.
+ * @param NumberOfBytes The number of bytes to allocate.
  * @return NULL if there is insufficient memory in the free pool to satisfy the request. Otherwise, the routine returns a pointer to the allocated memory.
  */
 XBAPI PVOID NTAPI ExAllocatePool

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 // SPDX-FileCopyrightText: 2023 Ryan Wendland
+// SPDX-FileCopyrightText: 2025 Stefan Schmidt
 
 #ifndef __TIMEZONEAPI_H__
 #define __TIMEZONEAPI_H__
@@ -11,12 +12,13 @@
 extern "C" {
 #endif
 
-#define TIME_ZONE_ID_UNKNOWN 0
+#define TIME_ZONE_ID_UNKNOWN  0
 #define TIME_ZONE_ID_STANDARD 1
 #define TIME_ZONE_ID_DAYLIGHT 2
-#define TIME_ZONE_ID_INVALID ((DWORD)0xFFFFFFFF)
+#define TIME_ZONE_ID_INVALID  ((DWORD)0xFFFFFFFF)
 
-typedef struct _TIME_ZONE_INFORMATION {
+typedef struct _TIME_ZONE_INFORMATION
+{
     LONG Bias;
     WCHAR StandardName[32];
     SYSTEMTIME StandardDate;
@@ -27,6 +29,10 @@ typedef struct _TIME_ZONE_INFORMATION {
 } TIME_ZONE_INFORMATION, *PTIME_ZONE_INFORMATION, *LPTIME_ZONE_INFORMATION;
 
 DWORD GetTimeZoneInformation (LPTIME_ZONE_INFORMATION lpTimeZoneInformation);
+
+BOOL FileTimeToSystemTime (const FILETIME *lpFileTime, LPSYSTEMTIME lpSystemTime);
+BOOL SystemTimeToFileTime (const SYSTEMTIME *lpSystemTime, LPFILETIME lpFileTime);
+BOOL FileTimeToLocalFileTime (const FILETIME *lpFileTime, LPFILETIME lpLocalFileTime);
 
 #ifdef __cplusplus
 }
